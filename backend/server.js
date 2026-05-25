@@ -5,6 +5,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+
+// Load environment variables FIRST - before importing routes
+dotenv.config();
+
 import mongoConnection from './config/database.js';
 import authRoutes from './routes/auth.js';
 import partnerRoutes from './routes/partners.js';
@@ -16,7 +20,25 @@ import walletRoutes from './routes/wallet.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticate } from './middleware/auth.js';
 
-dotenv.config();
+// Validate critical environment variables
+const requiredEnvVars = [
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'MONGODB_URI',
+];
+
+const missingEnvVars = requiredEnvVars.filter(
+  (envVar) => !process.env[envVar]
+);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  missingEnvVars.forEach((envVar) => {
+    console.error(`   - ${envVar}`);
+  });
+  console.error('\nPlease check your backend/.env file');
+  process.exit(1);
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -56,10 +78,29 @@ io.on('connection', (socket) => {
   });
 });
 
+// ===== DEBUG ROUTES (Remove in production) =====
+
 // Health Check
 app.get('/health', (req, res) => {
   res.status(200).json({ message: 'Server is running', timestamp: new Date() });
 });
+
+// Debug Environment Variables
+app.get('/debug/env', (req, res) => {
+  res.status(200).json({
+    PORT: process.env.PORT,
+    NODE_ENV: process.env.NODE_ENV,
+    JWT_SECRET_SET: !!process.env.JWT_SECRET,
+    JWT_SECRET_LENGTH: process.env.JWT_SECRET?.length || 0,
+    JWT_REFRESH_SECRET_SET: !!process.env.JWT_REFRESH_SECRET,
+    JWT_REFRESH_SECRET_LENGTH: process.env.JWT_REFRESH_SECRET?.length || 0,
+    MONGODB_URI_SET: !!process.env.MONGODB_URI,
+    FRONTEND_URL: process.env.FRONTEND_URL,
+    VITE_API_BASE_URL: process.env.VITE_API_BASE_URL,
+  });
+});
+
+// ===== END DEBUG ROUTES =====
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -81,8 +122,12 @@ app.use(errorHandler);
 // Start Server
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
-  console.log(`✅ QuickLift Server running on port ${PORT}`);
+  console.log(`\n✅ QuickLift Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+  console.log(`🔐 JWT_SECRET loaded: ${!!process.env.JWT_SECRET}`);
+  console.log(`🔄 MONGODB_URI loaded: ${!!process.env.MONGODB_URI}`);
+  console.log(`\n📝 Debug endpoint: http://localhost:${PORT}/debug/env`);
+  console.log(`🏥 Health check: http://localhost:${PORT}/health\n`);
 });
 
 // Graceful Shutdown
